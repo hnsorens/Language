@@ -1,10 +1,20 @@
 
 
+int a = 1;
+int b = 2;
 
-void main()
+int main()
 {
 
+    print_num(a, b, add(1, 2));
+
+    int idk = 1;
+    idk = 3;
+
+    return 1;
 }
 
-
-int i = (1)+(1+1)
+int add(int i, int k)
+{
+    return i + k;
+}

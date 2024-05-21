@@ -3,80 +3,90 @@
 #include <ctype.h>
 #include <math.h>
 
-#include "Tokenizer.h"
 #include "Lexer.h"
+#include "Parser.h"
+#include "ExecutableBuilder.h"
 
-FILE *file;
+int ReadFile(const char* name, const char** fileContents, size_t* length)
+{
+    // open the file in read mode
+    FILE *file = fopen(name, "rb");
 
-
-
-int main() {
-    // Open the file in read mode
-    FILE *file = fopen("program.code", "rb"); // Open in binary mode to handle non-text files
-
-    if (file == NULL) {
-        perror("Error opening file");
-        return EXIT_FAILURE;
+    if (file == NULL)
+    {
+        perror("Error opening file!");
+        return 0;
     }
 
     // Determine the size of the file
     fseek(file, 0, SEEK_END); // Move the file pointer to the end of the file
-    long file_size = ftell(file); // Get the current position, which is the size of the file
+    size_t file_size = ftell(file); // Get the current position, which is the size of the file
     fseek(file, 0, SEEK_SET); // Move the file pointer back to the beginning
 
     if (file_size == -1) {
         perror("Error getting file size");
         fclose(file);
-        return EXIT_FAILURE;
+        return 0;
     }
 
     // Allocate memory to store the file contents
-    char *buffer = (char *)malloc(file_size + 1); // Allocate an extra byte for the null terminator
+    *fileContents = (char *)malloc(file_size + 1); // Allocate an extra byte for the null terminator
 
-    if (buffer == NULL) {
+    if (*fileContents == NULL) {
         perror("Memory allocation error");
         fclose(file);
-        return EXIT_FAILURE;
+        return 0;
     }
 
     // Read the file contents into the buffer
-    size_t bytes_read = fread(buffer, 1, file_size, file);
+    *length = fread(*fileContents, 1, file_size, file);
 
-    if (bytes_read != file_size) {
+    if (*length != file_size) {
         perror("Error reading file");
         fclose(file);
-        free(buffer);
-        return EXIT_FAILURE;
+        free(*fileContents);
+        return 0;
     }
 
-    // Add null terminator at the end of the buffer
-    buffer[file_size] = '\0';
+    return 1;
+}
 
-    // Close the file
-    fclose(file);
+int main() {
+    
+
+    size_t file_size;
+    char *source_code;
+    if (ReadFile("program.code", &source_code, &file_size))
 
     // Now you have the file contents in 'buffer' and its size in 'file_size'
-    printf("File contents: %s\n", buffer);
+    printf("File contents: %s\n", source_code);
     printf("File size: %ld bytes\n", file_size);
 
-    TokenList tokenList;
-    tokenList.capacity = 256;
-    tokenList.tokenCount = 0;
-    tokenList.tokens = (Token*)malloc(sizeof(Token) * tokenList.capacity);
+    LexerState lexer = {source_code, file_size, 0, 1, 1};
+    Token tokens[100]; // Assuming a maximum of 100 tokens
+    size_t token_count = 0;
 
-    tokenize(&tokenList, buffer);
-    if (Lex(&tokenList) == 0)
+    Token token;
+    do 
     {
-        perror("Compile Error");
+        token = next_token(&lexer);
+        tokens[token_count++] = token;
+        printf("Token: %s, Type: %d, Line: %d, Column: %d\n", token.lexeme, token.type, token.line, token.column);
     }
+    while (token.type != TOKEN_EOF);
 
-    for (int i = 0; i < 40; i++)
-    {
-        printf("%i ", tokenList.tokens[i].token.i);
+    ParserState parser_state = {tokens, token_count, 0};
+    ASTNode *ast = parse_compound_global_construct(&parser_state);
+
+    print_ast(ast, 0);
+
+    BuildExecutable();
+
+
+    // Free allocated lexeme strings
+    for (size_t i = 0; i < token_count; i++) {
+        free(tokens[i].lexeme);
     }
-
-    // Don't forget to free the allocated memory
-    free(buffer);
 
     return EXIT_SUCCESS;
 }

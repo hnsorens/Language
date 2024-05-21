@@ -1,126 +1,146 @@
-/**
- * TODO
- * Implement Expressions
- * Implement Parameters
- * Implement StatementLists
- * Implement Loops
-*/
-
 #include "Lexer.h"
 
-#include "Patterns/Expression.h"
-#include "Patterns/FunctionDeclaration.h"
-#include "Patterns/GlobalVariableDeclaration.h"
+/**
+ * TODO
+ * make it so identifiers can have numbers in them 
+*/
 
-int CheckToken(Token* tokenList, int* offset, TokenType form, TokenWords type, void** ptr)
+Token create_token(TokenType type, const char* lexeme, int line, int column)
 {
-    if ((form != TOKEN_FORM_WORD && tokenList[*offset].type == form) || (tokenList[*offset].type == form && tokenList[*offset].token.token == type))
-    {
-        if (ptr)
-        *ptr = &tokenList[*offset];
-        *offset += 1;
-        return 1;
-    }
-    return 0;
+    Token token;
+    token.type = type;
+    token.lexeme = strdup(lexeme);
+    token.line = line;
+    token.column = column;
+    return token;
 }
 
-int CheckTokenWithoutOffset(Token* tokenList, int* offset, TokenType form, TokenWords type)
+Token next_token(LexerState *state)
 {
-    if ((form != TOKEN_FORM_WORD && tokenList[*offset].type == form) || (tokenList[*offset].type == form && tokenList[*offset].token.token == type))
+    while (state->position < state->length)
     {
-        return 1;
+        char current_char = state->source[state->position];
+
+        // Skip whitespace
+        if (isspace(current_char))
+        {
+            if (current_char == '\n')
+            {
+                state->line++;
+                state->column = 0;
+            }
+            else
+            {
+                state->column++;
+            }
+            state->position++;
+            continue;
+        }
+
+        // Handle operators
+        if (strchr("+-*/=<>&|", current_char))
+        {
+            size_t start = state->position;
+            while (strchr("+-*/=<>&|", state->source[state->position]))
+            {
+                state->position++;
+                state->column++;
+            }
+            size_t length = state->position - start;
+            char *lexeme = strndup(&state->source[start], length);
+            Token token = create_token(TOKEN_OPERATOR, lexeme, state->line, state->column);
+            free(lexeme);
+            return token;
+        }
+
+
+        // Handle numbers
+        if (isdigit(current_char))
+        {
+            size_t start = state->position;
+            while (isdigit(state->source[state->position]))
+            {
+                state->position++;
+                state->column++;
+            }
+            size_t length = state->position - start;
+            char *lexeme = strndup(&state->source[start], length);
+            Token token = create_token(TOKEN_NUMBER, lexeme, state->line, state->column);
+            free(lexeme);
+            return token;
+        }
+
+        // Handle identifiers and keywords
+        if (isalpha(current_char) || current_char == '_')
+        {
+            size_t start = state->position;
+            while (isalpha(state->source[state->position]) || state->source[state->position] == '_')
+            {
+                state->position++;
+                state->column++;
+            }
+            size_t length = state->position - start;
+            char *lexeme = strndup(&state->source[start], length);
+            // Keywords
+            if (
+                strcmp(lexeme, "int") == 0
+                || strcmp(lexeme, "bool") == 0
+                || strcmp(lexeme, "if") == 0
+                || strcmp(lexeme, "for") == 0
+                || strcmp(lexeme, "while") == 0
+                || strcmp(lexeme, "else") == 0
+                || strcmp(lexeme, "return") == 0
+            )
+            {
+                Token token = create_token(TOKEN_KEYWORD, lexeme, state->line, state->column);
+                free(lexeme);
+                return token;
+            }
+            // Identifiers
+            Token token = create_token(TOKEN_IDENTIFIER, lexeme, state->line, state->column);
+            free(lexeme);
+            return token;
+        }
+
+
+        // Handle Punctuation
+        if (strchr(".,;(){}[]", current_char))
+        {
+            char lexeme[2] = {current_char, '\0'}; // Single character lexeme
+            Token token = create_token(TOKEN_PUNCTUATOR, lexeme, state->line, state->column);
+            state->position++;
+            state->column++;
+            return token;
+        }
+
+        // Hande String
+        if (strchr("\"\'", current_char))
+        {
+            char start_char = current_char;
+            size_t start = state->position;
+            while (state->source[state->position] != start_char || state->source[state->position-1] == '\\')
+            {
+                state->position++;
+                state->column++;
+                if (state->source[state->position] == '\n')
+                {
+                    state->line++;
+                    state->column = 0;
+                }
+            }
+            size_t length = state->position - start;
+            char *lexeme = strndup(&state->source[start]+1, length-2);
+            Token token = create_token(TOKEN_STRING, lexeme, state->line, state->column);
+            free(lexeme);
+            return token;
+        }
+
+        // Unknown character (error handling)
+        state->position++;
+        state->column++;
+
+        perror("Compiler error\n");
     }
-    return 0;
-}
 
-int IsDataType(Token* tokenList, int* offset)
-{
-    if (
-        CheckTokenWithoutOffset(tokenList, offset, TOKEN_FORM_WORD, TOKEN_VOID)
-        || CheckTokenWithoutOffset(tokenList, offset, TOKEN_FORM_WORD, TOKEN_INT)
-        || CheckTokenWithoutOffset(tokenList, offset, TOKEN_FORM_IDENTIFIER, 0)
-    )
-    {
-        *offset += 1;
-        return 1;
-    }
-    return 0;
-}
-
-int IsControlFlow(Token* tokenList, int* offset)
-{
-    if (
-        CheckTokenWithoutOffset(tokenList, offset, TOKEN_FORM_WORD, TOKEN_IF)
-        || CheckTokenWithoutOffset(tokenList, offset, TOKEN_FORM_WORD, TOKEN_FOR)
-        || CheckTokenWithoutOffset(tokenList, offset, TOKEN_FORM_WORD, TOKEN_WHILE)
-    )
-    {
-        *offset += 1;
-        return 1;
-    }
-    return 0;
-}
-
-int IsValue(Token* tokenList, int* offset)
-{
-    if (
-        CheckTokenWithoutOffset(tokenList, offset, TOKEN_FORM_IDENTIFIER, 0)
-        || CheckTokenWithoutOffset(tokenList, offset, TOKEN_FORM_DECIMAL, 0)
-        || CheckTokenWithoutOffset(tokenList, offset, TOKEN_FORM_INTEGER, 0)
-    )
-    {
-        *offset += 1;
-        return 1;
-    }
-    return 0;
-}
-
-int IsOperator(Token* tokenList, int* offset, TokenWords** operator)
-{
-    if (
-        CheckTokenWithoutOffset(tokenList, offset, TOKEN_FORM_WORD, TOKEN_PLUS)
-        || CheckTokenWithoutOffset(tokenList, offset, TOKEN_FORM_WORD, TOKEN_MINUS)
-        || CheckTokenWithoutOffset(tokenList, offset, TOKEN_FORM_WORD, TOKEN_MULTIPLY)
-        || CheckTokenWithoutOffset(tokenList, offset, TOKEN_FORM_WORD, TOKEN_DIVIDE)
-    )
-    {
-        if (operator)
-        *operator = &tokenList[*offset].token.token;
-        *offset += 1;
-        return 1;
-    }
-    return 0;
-}
-
-int findPattern(Token* tokenList, int* offset, int allowedPatterns, void** structPtr)
-{
-    if (allowedPatterns & PATTERN_CODE)
-    {
-        return findPattern(tokenList, offset, PATTERN_FUNCTION_DELARATION | PATTERN_GLOBAL_VARIABLE_DECLARATION, structPtr);
-    }
-
-
-    if (
-        CheckFunctionDeclaration(PATTERN_CHECK_PARAMETERS)
-        || CheckGlobalVariableDeclaration(PATTERN_CHECK_PARAMETERS)
-        || CheckExpression(PATTERN_CHECK_PARAMETERS)
-        || (allowedPatterns & PATTERN_STATEMENT_LIST || allowedPatterns & PATTERN_PARAMETER_LIST || allowedPatterns & PATTERN_DONE) //still need a check function for these
-    )
-    {
-        return 1;
-    }
-    else
-    {
-        return 0;
-    }
-}
-
-int Lex(TokenList* tokenList)
-{
-    int tokenOffset = 0;
-    Token* tokens = tokenList->tokens;
-
-    Code* code = (Code*)malloc(sizeof(Code));
-    return findPattern(tokens, &tokenOffset, PATTERN_CODE, &code);
-    
+    return create_token(TOKEN_EOF, "", state->line, state->column);
 }

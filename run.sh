@@ -1,2 +1,2 @@
-gcc -o compiler src/Source/main.c src/Source/Tokenizer.c src/Source/Lexer.c src/Source/Patterns/Expression.c src/Source/Patterns/FunctionDeclaration.c src/Source/Patterns/GlobalVariableDeclaration.c -I./src/Includes -lm
+gcc -o compiler src/Source/main.c src/Source/Lexer.c src/Source/Parser.c src/Source/ExecutableBuilder.c -I./src/Includes -lm
 ./compiler
