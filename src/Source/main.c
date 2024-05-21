@@ -5,6 +5,7 @@
 
 #include "Lexer.h"
 #include "Parser.h"
+#include "SemanticAnalysis.h"
 #include "ExecutableBuilder.h"
 
 int ReadFile(const char* name, const char** fileContents, size_t* length)
@@ -77,8 +78,12 @@ int main() {
 
     ParserState parser_state = {tokens, token_count, 0};
     ASTNode *ast = parse_compound_global_construct(&parser_state);
-
     print_ast(ast, 0);
+
+    SymbolTable symtab;
+    init_symbol_table(&symtab);
+    SemanticState semantic_state = {&symtab, 0};
+    semantic_analysis(ast, &semantic_state);
 
     BuildExecutable();
 

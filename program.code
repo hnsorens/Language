@@ -3,18 +3,25 @@
 int a = 1;
 int b = 2;
 
-int main()
+void print_num()
 {
-
-    print_num(a, b, add(1, 2));
-
-    int idk = 1;
-    idk = 3;
-
-    return 1;
+    
 }
 
 int add(int i, int k)
 {
     return i + k;
 }
+
+int main()
+{
+
+    print_num(a, b, add(a,b));
+
+    int idk = 1;
+
+    idk -= 5;
+
+    return 1;
+}
+

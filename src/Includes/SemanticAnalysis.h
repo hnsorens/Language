@@ -35,4 +35,6 @@ typedef struct
     int current_scope;
 } SemanticState;
 
-void semantic_analysis();
+
+void semantic_analysis(ASTNode *node, SemanticState *state);
+void init_symbol_table(SymbolTable *symtab);

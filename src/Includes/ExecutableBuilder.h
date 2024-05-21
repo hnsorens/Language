@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 
-
+#include "SemanticAnalysis.h"
 
 typedef struct
 {
@@ -36,4 +36,4 @@ typedef struct
     uint32_t p_align;
 } Elf32_Phdr __attribute__((packed));
 
-void BuildExecutable();
+void BuildExecutable(ASTNode *node);
