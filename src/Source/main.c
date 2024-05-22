@@ -85,7 +85,7 @@ int main() {
     SemanticState semantic_state = {&symtab, 0};
     semantic_analysis(ast, &semantic_state);
 
-    BuildExecutable();
+    BuildExecutable(ast);
 
 
     // Free allocated lexeme strings

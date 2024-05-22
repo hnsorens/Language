@@ -36,4 +36,11 @@ typedef struct
     uint32_t p_align;
 } Elf32_Phdr __attribute__((packed));
 
+typedef struct
+{
+    uint8_t* bytes;
+    uint32_t count;
+    uint32_t capacity;
+} program_chunk;
+
 void BuildExecutable(ASTNode *node);
