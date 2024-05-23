@@ -56,67 +56,6 @@
 #define ESI 0x06
 #define EDI 0x07
 
-// Immediate += -=...
-#define IMT 0x83
-
-#define ADD_IMT 0x00
-#define OR_IMT 0x01
-#define ADC_IMT 0x02
-#define SBB_IMT 0x03
-#define AND_IMT 0x04
-#define SUB_IMT 0x05
-#define XOR_IMT 0x06
-#define CMP_IMT 0x07
-
-#define PUSH_IMT 0x68
-#define MOV_DWORD_IMT 0xC7
-#define MOV_WORD_IMT 0x66, 0xC7
-#define MOV_BYTE_IMT 0xC6
-
-#define ADD 0x03
-#define SUB 0x2B
-
-uint8_t getRegisterByteDirect(uint8_t dest, uint8_t move)
-{
-    return 192 + (move << 3) + dest;
-}
-
-uint8_t getImmediateByte(uint8_t action, uint8_t dest)
-{
-    return 192 + (action << 3) + dest;
-}
-
-uint8_t getPushRegByte(uint8_t reg)
-{
-    return 0x50 + reg;
-}
-
-uint8_t getPopRegByte(uint8_t reg)
-{
-    return 0x58 + reg;
-}
-
-uint8_t getMovImmediateByte(uint8_t reg)
-{
-    return 0xB8 + reg;
-}
-
-uint8_t getMovOffsetByte(uint8_t reg)
-{
-    return 0x40 + reg;
-}
-
-#define IMMEDIATE 0x83
-#define PUSH_EBP 0x55
-#define MOV 0x89
-#define POP_EBP 0x5D
-#define RET 0xC3
-
-
-
-
-
-
 program_chunk* create_program_chunk()
 {
     program_chunk* chunk = (program_chunk*)malloc(sizeof(program_chunk));   
@@ -126,7 +65,7 @@ program_chunk* create_program_chunk()
     return chunk;
 }
 
-void addByte(program_chunk* chunk, uint8_t byte)
+void add_byte(program_chunk* chunk, uint8_t byte)
 {
     if (chunk->count >= chunk->capacity)
     {
@@ -136,185 +75,941 @@ void addByte(program_chunk* chunk, uint8_t byte)
     chunk->bytes[chunk->count++] = byte;
 }
 
-void addint32Bytes(program_chunk* chunk, int32_t num)
-{
-    addByte(chunk, (uint8_t)num);
-    addByte(chunk, (uint8_t)(num >> 8));
-    addByte(chunk, (uint8_t)(num >> 16));
-    addByte(chunk, (uint8_t)(num >> 24));
+
+// 'mov' Instruction
+
+/**
+ * Move a 32-bit Register to Another 32-bit Register
+*/
+void mov_reg32_reg32(program_chunk* chunk, uint8_t dest_reg, uint8_t src_reg) {
+    add_byte(chunk, 0x89);             // Opcode for 'mov r/m32, r32'
+    add_byte(chunk, 0xC0 | (src_reg << 3) | dest_reg); // ModR/M byte
 }
 
-void addint16Bytes(program_chunk* chunk, int32_t num)
-{
-    addByte(chunk, (uint8_t)num);
-    addByte(chunk, (uint8_t)(num >> 8));
+/**
+ * Move a 16-bit Register to Another 16-bit Register
+*/
+void mov_reg16_reg16(program_chunk* chunk, uint8_t dest_reg, uint8_t src_reg) {
+    add_byte(chunk, 0x66);             // Operand-size override prefix for 16-bit
+    add_byte(chunk, 0x89);             // Opcode for 'mov r/m16, r16'
+    add_byte(chunk, 0xC0 | (src_reg << 3) | dest_reg); // ModR/M byte
 }
 
-void push_register(program_chunk* chunk, uint8_t reg){addByte(chunk, 0x50 + reg);}
-void mov_number_into_register(program_chunk* chunk, uint8_t dest, uint32_t num){addByte(chunk, 0xB8 + dest);            addint32Bytes(chunk, num);/*             addByte(chunk, num);addByte(chunk, 0);addByte(chunk, 0);addByte(chunk, 0);*/}
-void pop_register(program_chunk* chunk, uint8_t reg){addByte(chunk, 0x58 + reg);}
+/**
+ * Move an 8-bit Register to Another 8-bit Register
+*/
+void mov_reg8_reg8(program_chunk* chunk, uint8_t dest_reg, uint8_t src_reg) {
+    add_byte(chunk, 0x88);             // Opcode for 'mov r/m8, r8'
+    add_byte(chunk, 0xC0 | (src_reg << 3) | dest_reg); // ModR/M byte
+}
 
-void add_byte_number_to_register(program_chunk *chunk, uint8_t dest, uint8_t num){addByte(chunk, 0x80); addByte(chunk, 192 + dest); addByte(chunk, num);}
-void sub_number_from_esp(program_chunk* chunk, uint8_t dest, uint8_t num){addByte(chunk, IMT);addByte(chunk, 192 + (SUB_IMT << 3) + dest);addByte(chunk, num);}
-void end_function(program_chunk* chunk){addByte(chunk, RET);}
-void call_kernal(program_chunk* chunk){addByte(chunk, 0xCD); addByte(chunk, 0x80);}
-void clear_register(program_chunk* chunk, uint8_t reg){addByte(chunk, 0x31); addByte(chunk, 192 + (reg << 3) + reg);}
-void mov_value_byte_with_offset(program_chunk* chunk, int8_t offset, uint8_t dest, uint8_t byte){addByte(chunk, MOV_DWORD_IMT); addByte(chunk, getMovOffsetByte(EBP)); addByte(chunk, offset); addByte(chunk, byte);}
-void mov_reg_byte_with_offset(program_chunk* chunk, int8_t offset, uint8_t dest, uint8_t move){addByte(chunk, 0x89); addByte(chunk, 64 + (move << 3) + dest); addByte(chunk, offset);} // doesnt work
-void test_2_reg(program_chunk* chunk, uint8_t reg1, uint8_t reg2){addByte(chunk, 0x85); addByte(chunk, 192 + (reg1 << 3) + reg2);}
+/**
+ * Move an Immediate 32-bit Value to a Register
+*/
+void mov_reg32_imm32(program_chunk* chunk, uint8_t dest_reg, uint32_t imm) {
+    add_byte(chunk, 0xB8 | dest_reg);  // Opcode for 'mov r32, imm32'
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 24) & 0xFF));
+}
 
-// void add_to_8_register(program_chunk* chunk, uint8_t dest, int8_t num){addByte(chunk, 0x80)}
+/**
+ * Move an Immediate 16-bit Value to a Register
+*/
+void mov_reg16_imm16(program_chunk* chunk, uint8_t dest_reg, uint16_t imm) {
+    add_byte(chunk, 0x66);             // Operand-size override prefix for 16-bit
+    add_byte(chunk, 0xB8 | dest_reg);  // Opcode for 'mov r16, imm16'
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+}
+
+/**
+ * Move an Immediate 8-bit Value to a Register
+*/
+void mov_reg8_imm8(program_chunk* chunk, uint8_t dest_reg, uint8_t imm) {
+    add_byte(chunk, 0xB0 | dest_reg);  // Opcode for 'mov r8, imm8'
+    add_byte(chunk, imm);
+}
 
 
-//Good and tested functions
-void mov_32_register(program_chunk* chunk, uint8_t dest, uint8_t move){addByte(chunk, 0x89);addByte(chunk, 192 + (move << 3) + dest);}
-void mov_16_register(program_chunk* chunk, uint8_t dest, uint8_t move){addByte(chunk, 0x66);addByte(chunk, 0x89);addByte(chunk, 192 + (move << 3) + dest);}
-void mov_8L_register(program_chunk* chunk, uint8_t dest, uint8_t move){addByte(chunk, 0x88);addByte(chunk, 192 + (move << 3) + dest);} // works for A-D
-void mov_8H_register(program_chunk* chunk, uint8_t dest, uint8_t move){addByte(chunk, 0x88);addByte(chunk, 192 + (move*2 << 3) + dest*2);} // works for A-D
 
-void add_8signed_to_register(program_chunk* chunk, uint8_t dest, int8_t num){addByte(chunk, 0x83);addByte(chunk, 192 + dest);addByte(chunk, (uint8_t)num);}
-void add_to_8_register(program_chunk* chunk, uint8_t dest, int8_t num){addByte(chunk, 0x80);addByte(chunk, 192 + dest);addByte(chunk, (uint8_t)num);}
-void add_to_16_register(program_chunk* chunk, uint8_t dest, uint16_t num){addByte(chunk, 0x66);switch (dest){case EAX:addByte(chunk, 0x05);break;case ECX:addByte(chunk, 0x0D);break;case EDX:addByte(chunk, 0x15);break;default:addByte(chunk, 0x81);addByte(chunk, 192 + (ADD_IMT << 3) + dest);}addint16Bytes(chunk, num);}
-void add_to_register(program_chunk* chunk, uint8_t dest, uint32_t num){switch (dest){case EAX:addByte(chunk, 0x05);break;case ECX:addByte(chunk, 0x0D);break;case EDX:addByte(chunk, 0x15);break;default:addByte(chunk, 0x81);addByte(chunk, 192 + (ADD_IMT << 3) + dest);}addint32Bytes(chunk, num);}
+
+// 'add' Instruction
+
+/**
+ * Add a 32-bit Register to Another 32-bit Register
+*/
+void add_reg32_reg32(program_chunk* chunk, uint8_t dest_reg, uint8_t src_reg) {
+    add_byte(chunk, 0x01);             // Opcode for 'add r/m32, r32'
+    add_byte(chunk, 0xC0 | (src_reg << 3) | dest_reg); // ModR/M byte
+}
+
+/**
+ * Add a 16-bit Register to Another 16-bit Register
+*/
+void add_reg16_reg16(program_chunk* chunk, uint8_t dest_reg, uint8_t src_reg) {
+    add_byte(chunk, 0x66);             // Operand-size override prefix for 16-bit
+    add_byte(chunk, 0x01);             // Opcode for 'add r/m16, r16'
+    add_byte(chunk, 0xC0 | (src_reg << 3) | dest_reg); // ModR/M byte
+}
+
+/**
+ * Add an 8-bit Register to Another 8-bit Register
+*/
+void add_reg8_reg8(program_chunk* chunk, uint8_t dest_reg, uint8_t src_reg) {
+    add_byte(chunk, 0x00);             // Opcode for 'add r/m8, r8'
+    add_byte(chunk, 0xC0 | (src_reg << 3) | dest_reg); // ModR/M byte
+}
+
+/**
+ * Add an Immediate 32-bit Value to a Register
+*/
+void add_reg32_imm32(program_chunk* chunk, uint8_t dest_reg, uint32_t imm) {
+    add_byte(chunk, 0x81);             // Opcode for 'add r/m32, imm32'
+    add_byte(chunk, 0xC0 | dest_reg);  // ModR/M byte
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 24) & 0xFF));
+}
+
+/**
+ * Add an Immediate 16-bit Value to a Register
+*/
+void add_reg16_imm16(program_chunk* chunk, uint8_t dest_reg, uint16_t imm) {
+    add_byte(chunk, 0x66);             // Operand-size override prefix for 16-bit
+    add_byte(chunk, 0x81);             // Opcode for 'add r/m16, imm16'
+    add_byte(chunk, 0xC0 | dest_reg);  // ModR/M byte
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+}
+
+/**
+ * Add a 16-bit Immediate Value to a 32-bit Register
+*/
+void add_reg32_imm16(program_chunk* chunk, uint8_t dest_reg, uint16_t imm) {
+    add_byte(chunk, 0x81);             // Opcode for 'add r/m32, imm16'
+    add_byte(chunk, 0xC0 | dest_reg);  // ModR/M byte
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+}
+
+/**
+ * Add an Immediate 8-bit Value to a Register
+*/
+void add_reg8_imm8(program_chunk* chunk, uint8_t dest_reg, uint8_t imm) {
+    add_byte(chunk, 0x80);             // Opcode for 'add r/m8, imm8'
+    add_byte(chunk, 0xC0 | dest_reg);  // ModR/M byte
+    add_byte(chunk, imm);
+}
+
+/**
+ * Add an 8-bit Immediate Value to a 16-bit Register
+*/
+void add_reg16_imm8(program_chunk* chunk, uint8_t dest_reg, uint8_t imm) {
+    add_byte(chunk, 0x66);             // Operand-size override prefix for 16-bit
+    add_byte(chunk, 0x83);             // Opcode for 'add r/m16, imm8'
+    add_byte(chunk, 0xC0 | dest_reg);  // ModR/M byte
+    add_byte(chunk, imm);
+}
+
+/**
+ * Add an 8-bit Immediate Value to a 32-bit Register
+*/
+void add_reg32_imm8(program_chunk* chunk, uint8_t dest_reg, uint8_t imm) {
+    add_byte(chunk, 0x83);             // Opcode for 'add r/m32, imm8'
+    add_byte(chunk, 0xC0 | dest_reg);  // ModR/M byte
+    add_byte(chunk, imm);
+}
+
+// 'sub' Instruction
+
+/**
+ * Subtract a 32-bit Register from Another 32-bit Register
+*/
+
+void sub_reg32_reg32(program_chunk* chunk, uint8_t dest_reg, uint8_t src_reg) {
+    add_byte(chunk, 0x29);             // Opcode for 'sub r/m32, r32'
+    add_byte(chunk, 0xC0 | (src_reg << 3) | dest_reg); // ModR/M byte
+}
+
+/**
+ * Subtract a 16-bit Register from Another 16-bit Register
+*/
+void sub_reg16_reg16(program_chunk* chunk, uint8_t dest_reg, uint8_t src_reg) {
+    add_byte(chunk, 0x66);             // Operand-size override prefix for 16-bit
+    add_byte(chunk, 0x29);             // Opcode for 'sub r/m16, r16'
+    add_byte(chunk, 0xC0 | (src_reg << 3) | dest_reg); // ModR/M byte
+}
+
+/**
+ * Subtract an 8-bit Register from Another 8-bit Register
+*/
+void sub_reg8_reg8(program_chunk* chunk, uint8_t dest_reg, uint8_t src_reg) {
+    add_byte(chunk, 0x28);             // Opcode for 'sub r/m8, r8'
+    add_byte(chunk, 0xC0 | (src_reg << 3) | dest_reg); // ModR/M byte
+}
+
+/**
+ * Subtract an Immediate 32-bit Value from a Register
+*/
+void sub_reg32_imm32(program_chunk* chunk, uint8_t dest_reg, uint32_t imm) {
+    add_byte(chunk, 0x81);             // Opcode for 'sub r/m32, imm32'
+    add_byte(chunk, 0xE8 | dest_reg);  // ModR/M byte
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 24) & 0xFF));
+}
+
+/**
+ * Subtract an Immediate 16-bit Value from a Register
+*/
+void sub_reg16_imm16(program_chunk* chunk, uint8_t dest_reg, uint16_t imm) {
+    add_byte(chunk, 0x66);             // Operand-size override prefix for 16-bit
+    add_byte(chunk, 0x81);             // Opcode for 'sub r/m16, imm16'
+    add_byte(chunk, 0xE8 | dest_reg);  // ModR/M byte
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+}
+
+/**
+ * Subtract a 16-bit Immediate Value from a 32-bit Register
+*/
+void sub_reg32_imm16(program_chunk* chunk, uint8_t dest_reg, uint16_t imm) {
+    add_byte(chunk, 0x81);             // Opcode for 'sub r/m32, imm16'
+    add_byte(chunk, 0xE8 | dest_reg);  // ModR/M byte
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+}
+
+/**
+ * Subtract an Immediate 8-bit Value from a Register
+*/
+void sub_reg8_imm8(program_chunk* chunk, uint8_t dest_reg, uint8_t imm) {
+    add_byte(chunk, 0x80);             // Opcode for 'sub r/m8, imm8'
+    add_byte(chunk, 0xE8 | dest_reg);  // ModR/M byte
+    add_byte(chunk, imm);
+}
+
+/**
+ * Subtract an 8-bit Immediate Value from a 16-bit Register
+*/
+void sub_reg16_imm8(program_chunk* chunk, uint8_t dest_reg, uint8_t imm) {
+    add_byte(chunk, 0x66);             // Operand-size override prefix for 16-bit
+    add_byte(chunk, 0x83);             // Opcode for 'sub r/m16, imm8'
+    add_byte(chunk, 0xE8 | dest_reg);  // ModR/M byte
+    add_byte(chunk, imm);
+}
+
+/**
+ * Subtract an 8-bit Immediate Value from a 32-bit Register
+*/
+void sub_reg32_imm8(program_chunk* chunk, uint8_t dest_reg, uint8_t imm) {
+    add_byte(chunk, 0x83);             // Opcode for 'sub r/m32, imm8'
+    add_byte(chunk, 0xE8 | dest_reg);  // ModR/M byte
+    add_byte(chunk, imm);
+}
+
+// 'cmp' Instruction
+
+/**
+ * Compare a 32-bit Register with Another 32-bit Register
+*/
+void cmp_reg32_reg32(program_chunk* chunk, uint8_t reg1, uint8_t reg2) {
+    add_byte(chunk, 0x39);             // Opcode for 'cmp r/m32, r32'
+    add_byte(chunk, 0xC0 | (reg2 << 3) | reg1); // ModR/M byte
+}
+
+/**
+ * Compare a 16-bit Register with Another 16-bit Register
+*/
+void cmp_reg16_reg16(program_chunk* chunk, uint8_t reg1, uint8_t reg2) {
+    add_byte(chunk, 0x66);             // Operand-size override prefix for 16-bit
+    add_byte(chunk, 0x39);             // Opcode for 'cmp r/m16, r16'
+    add_byte(chunk, 0xC0 | (reg2 << 3) | reg1); // ModR/M byte
+}
+
+/**
+ * Compare an 8-bit Register with Another 8-bit Register
+*/
+void cmp_reg8_reg8(program_chunk* chunk, uint8_t reg1, uint8_t reg2) {
+    add_byte(chunk, 0x38);             // Opcode for 'cmp r/m8, r8'
+    add_byte(chunk, 0xC0 | (reg2 << 3) | reg1); // ModR/M byte
+}
+
+/**
+ * Compares a 32-bit Immediate Value with a Register
+*/
+void cmp_reg32_imm32(program_chunk* chunk, uint8_t reg, uint32_t imm)
+{
+    add_byte(chunk, 0x81);             // Opcode for 'cmp r/m32, imm32'
+    add_byte(chunk, 0xF8 | reg);       // ModR/M byte
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 24) & 0xFF));
+}
+
+/**
+ * Compare a 16-bit Immediate Value with a Register
+*/
+void cmp_reg16_imm16(program_chunk* chunk, uint8_t reg, uint16_t imm) {
+    add_byte(chunk, 0x66);             // Operand-size override prefix for 16-bit
+    add_byte(chunk, 0x81);             // Opcode for 'cmp r/m16, imm16'
+    add_byte(chunk, 0xF8 | reg);       // ModR/M byte
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+}
+
+/**
+ * Compare an 8-bit Immediate Value with a Register
+*/
+void cmp_reg8_imm8(program_chunk* chunk, uint8_t reg, uint8_t imm) {
+    add_byte(chunk, 0x80);             // Opcode for 'cmp r/m8, imm8'
+    add_byte(chunk, 0xF8 | reg);       // ModR/M byte
+    add_byte(chunk, imm);
+}
+
+// 'test' Instruction
+
+/**
+ * Tests an 8-bit Register with an 8-bit Immediate Value
+*/
+void test_reg8_imm8(program_chunk* chunk, uint8_t reg, uint8_t imm) {
+    add_byte(chunk, 0xF6);         // 0xF6 is the opcode for TEST r/m8, imm8 when using ModR/M byte
+    add_byte(chunk, 0xC0 | reg);   // 0xC0 | reg is the ModR/M byte for TEST r8, imm8 (C0 = 11000000 for 8-bit registers)
+    add_byte(chunk, imm);          // Add the 8-bit immediate value
+}
+
+/**
+ * Tests a 32-bit register with a 32-bit immediate value.
+*/
+void test_reg32_imm32(program_chunk* chunk, uint8_t reg, uint32_t imm) {
+    // 0xF7 is the opcode for TEST r/m32, imm32 when using ModR/M byte
+    add_byte(chunk, 0xF7);
+    // 0xC0 | reg is the ModR/M byte for TEST r32, imm32 (C0 = 11000000 for 32-bit registers)
+    add_byte(chunk, 0xC0 | reg);
+    // Add the 32-bit immediate value, byte by byte
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 24) & 0xFF));
+}
+
+/**
+ * Tests an 8-bit register with another 8-bit register.
+*/
+void test_reg8_reg8(program_chunk* chunk, uint8_t reg1, uint8_t reg2) {
+    // 0x84 is the opcode for TEST r/m8, r8
+    add_byte(chunk, 0x84);
+    // 0xC0 | (reg2 << 3) | reg1 is the ModR/M byte for TEST r8, r8 (C0 = 11000000 for 8-bit registers)
+    add_byte(chunk, 0xC0 | (reg2 << 3) | reg1);
+}
+
+/**
+ * Tests a 32-bit register with another 32-bit register.
+*/
+void test_reg32_reg32(program_chunk* chunk, uint8_t reg1, uint8_t reg2) {
+    // 0x85 is the opcode for TEST r/m32, r32
+    add_byte(chunk, 0x85);
+    // 0xC0 | (reg2 << 3) | reg1 is the ModR/M byte for TEST r32, r32 (C0 = 11000000 for 32-bit registers)
+    add_byte(chunk, 0xC0 | (reg2 << 3) | reg1);
+}
+
+// 'jmp' Instruction
+
+/**
+ * Short jump (8-bit displacement)
+*/
+void jmp_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0xEB);  // Opcode for short jump
+    add_byte(chunk, (uint8_t)offset);
+}
+
+/**
+ * Near Jump (32-bit displacement)
+*/
+void jmp_near(program_chunk* chunk, int32_t offset) {
+    add_byte(chunk, 0xE9);  // Opcode for near jump
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+/**
+ * Far Jump
+*/
+void jmp_far(program_chunk* chunk, uint16_t segment, uint32_t offset) {
+    add_byte(chunk, 0xEA);  // Opcode for far jump
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+    add_byte(chunk, (uint8_t)(segment & 0xFF));
+    add_byte(chunk, (uint8_t)((segment >> 8) & 0xFF));
+}
+
+// 'je/jz' Instruction
+
+void je_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0x74);  // Opcode for short JE/JZ
+    add_byte(chunk, (uint8_t)offset);
+}
+
+void je_near(program_chunk* chunk, int32_t offset) {
+    add_byte(chunk, 0x0F);  // Prefix for extended opcode
+    add_byte(chunk, 0x84);  // Opcode for near JE/JZ
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+// 'jne/jnz' Instruction
+
+void jne_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0x75);  // Opcode for short JNE/JNZ
+    add_byte(chunk, (uint8_t)offset);
+}
+
+void jne_near(program_chunk* chunk, int32_t offset) {
+    add_byte(chunk, 0x0F);  // Prefix for extended opcode
+    add_byte(chunk, 0x85);  // Opcode for near JNE/JNZ
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+// 'jg' Instruction
+
+void jg_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0x7F);  // Opcode for short JG
+    add_byte(chunk, (uint8_t)offset);
+}
+
+void jg_near(program_chunk* chunk, int32_t offset) {
+    add_byte(chunk, 0x0F);  // Prefix for extended opcode
+    add_byte(chunk, 0x8F);  // Opcode for near JG
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+// 'jge' Instruction
+
+void jge_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0x7D);  // Opcode for short JGE
+    add_byte(chunk, (uint8_t)offset);
+}
+
+void jge_near(program_chunk* chunk, int32_t offset) {
+    add_byte(chunk, 0x0F);  // Prefix for extended opcode
+    add_byte(chunk, 0x8D);  // Opcode for near JGE
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+// 'jl' Instruction
+
+void jl_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0x7C);  // Opcode for short JL
+    add_byte(chunk, (uint8_t)offset);
+}
+
+void jl_near(program_chunk* chunk, int32_t offset) {
+    add_byte(chunk, 0x0F);  // Prefix for extended opcode
+    add_byte(chunk, 0x8C);  // Opcode for near JL
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+// 'jle' Instruction
+
+void jle_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0x7E);  // Opcode for short JLE
+    add_byte(chunk, (uint8_t)offset);
+}
+
+void jle_near(program_chunk* chunk, int32_t offset) {
+    add_byte(chunk, 0x0F);  // Prefix for extended opcode
+    add_byte(chunk, 0x8E);  // Opcode for near JLE
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+// 'ja' Instruction
+
+void ja_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0x77);  // Opcode for short JA
+    add_byte(chunk, (uint8_t)offset);
+}
+
+void ja_near(program_chunk* chunk, int32_t offset) {
+    add_byte(chunk, 0x0F);  // Prefix for extended opcode
+    add_byte(chunk, 0x87);  // Opcode for near JA
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+// 'jae' Instruction
+
+void jae_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0x73);  // Opcode for short JAE
+    add_byte(chunk, (uint8_t)offset);
+}
+
+void jae_near(program_chunk* chunk, int32_t offset) {
+    add_byte(chunk, 0x0F);  // Prefix for extended opcode
+    add_byte(chunk, 0x83);  // Opcode for near JAE
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+// 'jb' Instruction
+
+void jb_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0x72);  // Opcode for short JB
+    add_byte(chunk, (uint8_t)offset);
+}
+
+void jb_near(program_chunk* chunk, int32_t offset) {
+    add_byte(chunk, 0x0F);  // Prefix for extended opcode
+    add_byte(chunk, 0x82);  // Opcode for near JB
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+// 'jbe' Instruction
+
+void jbe_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0x76);  // Opcode for short JBE
+    add_byte(chunk, (uint8_t)offset);
+}
+
+void jbe_near(program_chunk* chunk, int32_t offset) {
+    add_byte(chunk, 0x0F);  // Prefix for extended opcode
+    add_byte(chunk, 0x86);  // Opcode for near JBE
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+// 'jo' Instruction
+
+void jo_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0x70);  // Opcode for short JO
+    add_byte(chunk, (uint8_t)offset);
+}
+
+void jo_near(program_chunk* chunk, int32_t offset) {
+    add_byte(chunk, 0x0F);  // Prefix for extended opcode
+    add_byte(chunk, 0x80);  // Opcode for near JO
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+// 'jno' Instruction
+
+void jno_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0x71);  // Opcode for short JNO
+    add_byte(chunk, (uint8_t)offset);
+}
+
+void jno_near(program_chunk* chunk, int32_t offset) {
+    add_byte(chunk, 0x0F);  // Prefix for extended opcode
+    add_byte(chunk, 0x81);  // Opcode for near JNO
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+// 'jns' Instruction
+
+void jns_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0x79);  // Opcode for short JNS
+    add_byte(chunk, (uint8_t)offset);
+}
+
+void jns_near(program_chunk* chunk, int32_t offset) {
+    add_byte(chunk, 0x0F);  // Prefix for extended opcode
+    add_byte(chunk, 0x89);  // Opcode for near JNS
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+// 'jp/jpe' Instruction
+
+void jp_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0x7A);  // Opcode for short JP/JPE
+    add_byte(chunk, (uint8_t)offset);
+}
+
+void jp_near(program_chunk* chunk, int32_t offset) {
+    add_byte(chunk, 0x0F);  // Prefix for extended opcode
+    add_byte(chunk, 0x8A);  // Opcode for near JP/JPE
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+// 'jnp/jpo' Instruction
+
+void jnp_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0x7B);  // Opcode for short JNP/JPO
+    add_byte(chunk, (uint8_t)offset);
+}
+
+void jnp_near(program_chunk* chunk, int32_t offset) {
+    add_byte(chunk, 0x0F);  // Prefix for extended opcode
+    add_byte(chunk, 0x8B);  // Opcode for near JNP/JPO
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+// 'jcxz' Instruction
+
+void jcxz_short(program_chunk* chunk, int8_t offset) {
+    add_byte(chunk, 0xE3);  // Opcode for short JCXZ
+    add_byte(chunk, (uint8_t)offset);
+}
+
+// 'mul' Instruction
+
+void mul_reg8(program_chunk* chunk, uint8_t reg) {
+    // 0xF6 is the opcode for various instructions with 8-bit operand
+    add_byte(chunk, 0xF6);
+    // 0xE0 | reg specifies the ModR/M byte for MUL r/m8 (E0 = 11100000 for reg)
+    add_byte(chunk, 0xE0 | reg);
+}
+
+void mul_reg16(program_chunk* chunk, uint8_t reg) {
+    // 0xF7 is the opcode for various instructions with 16/32-bit operand
+    add_byte(chunk, 0xF7);
+    // 0xE0 | reg specifies the ModR/M byte for MUL r/m16 (E0 = 11100000 for reg)
+    add_byte(chunk, 0xE0 | reg);
+}
+
+void mul_reg32(program_chunk* chunk, uint8_t reg) {
+    // 0xF7 is the opcode for various instructions with 16/32-bit operand
+    add_byte(chunk, 0xF7);
+    // 0xE0 | reg specifies the ModR/M byte for MUL r/m32 (E0 = 11100000 for reg)
+    add_byte(chunk, 0xE0 | reg);
+}
+
+// 'imul' Instruction
+
+void imul_reg8(program_chunk* chunk, uint8_t reg) {
+    // 0xF6 is the opcode for various instructions with 8-bit operand
+    add_byte(chunk, 0xF6);
+    // 0xE8 | reg specifies the ModR/M byte for IMUL r/m8 (E8 = 11101000 for reg)
+    add_byte(chunk, 0xE8 | reg);
+}
+
+void imul_reg16(program_chunk* chunk, uint8_t reg) {
+    // 0xF7 is the opcode for various instructions with 16/32-bit operand
+    add_byte(chunk, 0xF7);
+    // 0xE8 | reg specifies the ModR/M byte for IMUL r/m16 (E8 = 11101000 for reg)
+    add_byte(chunk, 0xE8 | reg);
+}
+
+void imul_reg32(program_chunk* chunk, uint8_t reg) {
+    // 0xF7 is the opcode for various instructions with 16/32-bit operand
+    add_byte(chunk, 0xF7);
+    // 0xE8 | reg specifies the ModR/M byte for IMUL r/m32 (E8 = 11101000 for reg)
+    add_byte(chunk, 0xE8 | reg);
+}
+
+void imul_reg8_imm8(program_chunk* chunk, uint8_t reg, int8_t imm) {
+    // 0x6B is the opcode for IMUL r/m8, imm8
+    add_byte(chunk, 0x6B);
+    // 0xC0 | reg specifies the ModR/M byte for IMUL r/m8, imm8
+    add_byte(chunk, 0xC0 | reg);
+    // Add the 8-bit immediate value
+    add_byte(chunk, (uint8_t)imm);
+}
+
+void imul_reg16_imm16(program_chunk* chunk, uint8_t reg, int16_t imm) {
+    // 0x69 is the opcode for IMUL r16, imm16
+    add_byte(chunk, 0x69);
+    // 0xC0 | reg specifies the ModR/M byte for IMUL r16, imm16
+    add_byte(chunk, 0xC0 | reg);
+    // Add the 16-bit immediate value, byte by byte
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+}
+
+void imul_reg32_imm32(program_chunk* chunk, uint8_t reg, int32_t imm) {
+    // 0x69 is the opcode for IMUL r32, imm32
+    add_byte(chunk, 0x69);
+    // 0xC0 | reg specifies the ModR/M byte for IMUL r32, imm32
+    add_byte(chunk, 0xC0 | reg);
+    // Add the 32-bit immediate value, byte by byte
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 24) & 0xFF));
+}
+
+void imul_reg32_imm16(program_chunk* chunk, uint8_t reg, int16_t imm) {
+    // 0x69 is the opcode for IMUL r/m32, imm16
+    add_byte(chunk, 0x69);
+    // 0xC0 | reg specifies the ModR/M byte for IMUL r/m32, imm16
+    add_byte(chunk, 0xC0 | reg);
+    // Add the 16-bit immediate value, byte by byte
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+}
+
+void imul_reg32_imm8(program_chunk* chunk, uint8_t reg, int8_t imm) {
+    // 0x6B is the opcode for IMUL r32, imm8
+    add_byte(chunk, 0x6B);
+    // 0xC0 | reg specifies the ModR/M byte for IMUL r32, imm8
+    add_byte(chunk, 0xC0 | reg);
+    // Add the 8-bit immediate value
+    add_byte(chunk, (uint8_t)imm);
+}
+
+void imul_reg16_imm8(program_chunk* chunk, uint8_t reg, int8_t imm) {
+    // 0x6B is the opcode for IMUL r/m16, imm8
+    add_byte(chunk, 0x6B);
+    // 0xC0 | reg specifies the ModR/M byte for IMUL r/m16, imm8
+    add_byte(chunk, 0xC0 | reg);
+    // Add the 8-bit immediate value
+    add_byte(chunk, (uint8_t)imm);
+}
+
+// 'div' Instruction
+
+void div_reg8(program_chunk* chunk, uint8_t reg) {
+    // Opcode: F6 /6 (DIV r/m8)
+    add_byte(chunk, 0xF6);
+    add_byte(chunk, 0xF0 | reg); // ModR/M byte: 11 (register addressing) 110 (DIV)
+}
+
+void div_reg16(program_chunk* chunk, uint8_t reg) {
+    // Opcode: F7 /6 (DIV r/m16)
+    add_byte(chunk, 0xF7);
+    add_byte(chunk, 0xF0 | reg); // ModR/M byte: 11 (register addressing) 110 (DIV)
+}
+
+void div_reg32(program_chunk* chunk, uint8_t reg) {
+    // Opcode: F7 /6 (DIV r/m32)
+    add_byte(chunk, 0xF7);
+    add_byte(chunk, 0xF0 | reg); // ModR/M byte: 11 (register addressing) 110 (DIV)
+}
+
+// 'idiv' Instruction
+
+void idiv_reg8(program_chunk* chunk, uint8_t reg) {
+    // Opcode: F6 /7 (IDIV r/m8)
+    add_byte(chunk, 0xF6);
+    add_byte(chunk, 0xF8 | reg); // ModR/M byte: 11 (register addressing) 111 (IDIV)
+}
+
+void idiv_reg16(program_chunk* chunk, uint8_t reg) {
+    // Opcode: F7 /7 (IDIV r/m16)
+    add_byte(chunk, 0xF7);
+    add_byte(chunk, 0xF8 | reg); // ModR/M byte: 11 (register addressing) 111 (IDIV)
+}
+
+void idiv_reg32(program_chunk* chunk, uint8_t reg) {
+    // Opcode: F7 /7 (IDIV r/m32)
+    add_byte(chunk, 0xF7);
+    add_byte(chunk, 0xF8 | reg); // ModR/M byte: 11 (register addressing) 111 (IDIV)
+}
+
+// 'push' Instruction
+
+void push_imm8(program_chunk* chunk, uint8_t imm) {
+    // Opcode: 6A ib (PUSH imm8)
+    add_byte(chunk, 0x6A);
+    add_byte(chunk, imm);
+}
+
+void push_imm16(program_chunk* chunk, uint16_t imm) {
+    // Opcode: 68 iw (PUSH imm16)
+    add_byte(chunk, 0x68);
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+}
+
+void push_imm32(program_chunk* chunk, uint32_t imm) {
+    // Opcode: 68 id (PUSH imm32)
+    add_byte(chunk, 0x68);
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 24) & 0xFF));
+}
+
+void push_reg16(program_chunk* chunk, uint8_t reg) {
+    // Opcode: 50 + rw (PUSH r16)
+    add_byte(chunk, 0x50 + reg);
+}
+
+void push_reg32(program_chunk* chunk, uint8_t reg) {
+    // Opcode: 50 + rd (PUSH r32)
+    add_byte(chunk, 0x50 + reg);
+}
+
+// 'pop' Instruction
+
+void pop_reg16(program_chunk* chunk, uint8_t reg) {
+    // Opcode: 58 + rw (POP r16)
+    add_byte(chunk, 0x58 + reg);
+}
+
+void pop_reg32(program_chunk* chunk, uint8_t reg) {
+    // Opcode: 58 + rd (POP r32)
+    add_byte(chunk, 0x58 + reg);
+}
+
+// 'xor' Instruction
+
+void xor_reg8_imm8(program_chunk* chunk, uint8_t reg, uint8_t imm) {
+    // Opcode: 80 /6 ib (XOR r/m8, imm8)
+    add_byte(chunk, 0x80);
+    add_byte(chunk, 0xF0 | reg); // ModR/M byte: 11 (register addressing) 110 (XOR)
+    add_byte(chunk, imm);
+}
+
+void xor_reg8_imm32(program_chunk* chunk, uint8_t reg, uint32_t imm) {
+    // Move immediate value to a temporary register (e.g., BL)
+    add_byte(chunk, 0xB3);  // MOV BL, imm8
+    add_byte(chunk, imm);
+    
+    // Perform the XOR operation
+    add_byte(chunk, 0x32);  // XOR r/m8, r8
+    add_byte(chunk, 0xD8 | reg);  // ModR/M byte: 11 (register) 110 (XOR), BL
+}
+
+void xor_reg16_imm16(program_chunk* chunk, uint8_t reg, uint16_t imm) {
+    // Opcode: 81 /6 iw (XOR r/m16, imm16)
+    add_byte(chunk, 0x81);
+    add_byte(chunk, 0xF0 | reg); // ModR/M byte: 11 (register addressing) 110 (XOR)
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+}
+
+void xor_reg32_imm32(program_chunk* chunk, uint8_t reg, uint32_t imm) {
+    // Opcode: 81 /6 id (XOR r/m32, imm32)
+    add_byte(chunk, 0x81);
+    add_byte(chunk, 0xF0 | reg); // ModR/M byte: 11 (register addressing) 110 (XOR)
+    add_byte(chunk, (uint8_t)(imm & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((imm >> 24) & 0xFF));
+}
+
+void xor_reg8_reg8(program_chunk* chunk, uint8_t reg1, uint8_t reg2) {
+    // Opcode: 30 /r (XOR r/m8, r8)
+    add_byte(chunk, 0x30);
+    add_byte(chunk, 0xC0 | (reg1 << 3) | reg2); // ModR/M byte: 11 (register addressing)
+}
+
+void xor_reg16_reg16(program_chunk* chunk, uint8_t reg1, uint8_t reg2) {
+    // Opcode: 31 /r (XOR r/m16, r16)
+    add_byte(chunk, 0x31);
+    add_byte(chunk, 0xC0 | (reg1 << 3) | reg2); // ModR/M byte: 11 (register addressing)
+}
+
+void xor_reg32_reg32(program_chunk* chunk, uint8_t reg1, uint8_t reg2) {
+    // Opcode: 31 /r (XOR r/m32, r32)
+    add_byte(chunk, 0x31);
+    add_byte(chunk, 0xC0 | (reg1 << 3) | reg2); // ModR/M byte: 11 (register addressing)
+}
+
+// 'int' Instruction
+
+void int_kernal(program_chunk* chunk)
+{
+    add_byte(chunk, 0xCD);
+    add_byte(chunk, 0x80);
+}
+
+void ret(program_chunk* chunk)
+{
+    add_byte(chunk, 0xC3);
+}
+
+void call(program_chunk* chunk, int32_t offset)
+{
+    add_byte(chunk, 0xE8);
+    add_byte(chunk, (uint8_t)(offset & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 8) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 16) & 0xFF));
+    add_byte(chunk, (uint8_t)((offset >> 24) & 0xFF));
+}
+
+
+void build_print_num_function(program_chunk* chunk)
+{
+    push_reg32(chunk, EBP);
+    mov_reg32_reg32(chunk, EBP, ESP);
+    xor_reg32_reg32(chunk, ESI, ESI);
+    sub_reg32_imm32(chunk, ESP, 1);
+    add_byte(chunk, 0xC6);
+    add_byte(chunk, 0x04);
+    add_byte(chunk, 0x24);
+    add_byte(chunk, 0x0A);
+    add_reg32_imm32(chunk, ESI, 1);
+    xor_reg32_reg32(chunk, EBX, EBX);
+    xor_reg32_reg32(chunk, EDX, EDX);
+    mov_reg32_imm32(chunk, ECX, 10);
+    div_reg32(chunk, ECX);
+    add_reg32_imm32(chunk, EDX, '0');
+    sub_reg32_imm32(chunk, ESP, 1);
+    add_byte(chunk, 0x88);
+    add_byte(chunk, 0x14);
+    add_byte(chunk, 0x24);
+    add_reg32_imm32(chunk, ESI, 1);
+    test_reg32_reg32(chunk, EAX, EAX);
+    jne_short(chunk, -34);
+    mov_reg32_reg32(chunk, EDX, ESI);
+    mov_reg32_imm32(chunk, EAX, 4);
+    mov_reg32_imm32(chunk, EBX, 1);
+    mov_reg32_reg32(chunk, ECX, ESP);
+    int_kernal(chunk);
+    mov_reg32_reg32(chunk, ESP, EBP);
+    pop_reg32(chunk, EBP);
+    ret(chunk);
+}
+
+
+
+
+
+
 
 
 void BuildExecutable(ASTNode *node)
 {
-
-    // External Functions
-    printf("%i\n\n\n\n\n", 1234 >> 8);
-
-    // mov number into eax register
-
-    program_chunk* print_num_function = create_program_chunk();
-
-    mov_number_into_register(print_num_function, EAX, 123);
-
-    push_register(print_num_function, EBP);
-    mov_32_register(print_num_function, EBP, ESP);
-    
-    
-    clear_register(print_num_function, ESI);
-
-
-// add enter
-sub_number_from_esp(print_num_function, ESP, 1);
-
-addByte(print_num_function, 0xC6);
-addByte(print_num_function, 0x04);
-addByte(print_num_function, 0x24);
-addByte(print_num_function, 0x0A);
-
-  addByte(print_num_function, 0x83);
-    addByte(print_num_function, 0xC6);
-    addByte(print_num_function, 0x01);
-
-
-
-
-
-
-    // sub_number_from_esp(print_num_function, ESP, 4);
-
-    mov_number_into_register(print_num_function, EBX, 0);
-    // Begining of loop
-    clear_register(print_num_function, EDX);
-
-    mov_number_into_register(print_num_function, ECX, 10);
-    // div ecx ; divides 10 and puts remainder into EDX
-    addByte(print_num_function, 0xF7);
-    addByte(print_num_function, 0xF1);
-
-
-    add_byte_number_to_register(print_num_function, EDX, '0');
-    sub_number_from_esp(print_num_function, ESP, 1);
-    // mov_reg_byte_with_offset(print_num_function, 4, ESP, EDX);
-    addByte(print_num_function, 0x88);
-    addByte(print_num_function, 0x14);
-    addByte(print_num_function, 0x24);
-
-    // add_byte_number_to_register(print_num_function, ESI, 1);
-    addByte(print_num_function, 0x83);
-    addByte(print_num_function, 0xC6);
-    addByte(print_num_function, 0x01);
-
-    test_2_reg(print_num_function, EAX, EAX);
-    //jnz back to beginning of loop
-
-    addByte(print_num_function, 0x0F);
-    addByte(print_num_function, 0x85);
-    addByte(print_num_function, 256-34);
-    addByte(print_num_function, 0xFF);
-    addByte(print_num_function, 0xFF);
-    addByte(print_num_function, 0xFF);
-
-    // Print
-    mov_32_register(print_num_function, EDX, ESI);
-    mov_number_into_register(print_num_function, EAX, 4);
-    mov_number_into_register(print_num_function, EBX, 1);
-    // move the address of the number to ecx
-    mov_32_register(print_num_function, ECX, ESP);
-    call_kernal(print_num_function);
-
-    mov_32_register(print_num_function, ESP, EBP);
-    pop_register(print_num_function, EBP);
-    // end_function(print_num_function);
-
-
-
-
-#ifdef TESTS
-    // TEST
-    program_chunk* test = create_program_chunk();
-    
-    // all 32 bit register mov
-    for (int dest = 0; dest < 8; dest++)
-    {
-        add_8signed_to_register(test, dest, 123);
-    }
-    for (int dest = 0; dest < 8; dest++)
-    {
-        add_to_8_register(test, dest, 123);
-    }
-    for (int dest = 0; dest < 8; dest++)
-    {
-        add_to_16_register(test, dest, 123);
-    }
-    for (int dest = 0; dest < 8; dest++)
-    {
-        add_to_register(test, dest, -123);
-    }
-
-
-
-
-#endif 
-    // const uint8_t print_num_function[] = 
-    // {
-    //     PUSH_EBP,       // push ebp
-    //     MOV, getRegisterByteDirect(EBP, ESP), // mov ebp esp
-    //     IMT, getImmediateByte(SUB_IMT, ESP), 4, // sub esp 4
-        
-
-    //     IMT, getImmediateByte(ADD_IMT, ESP), 4,
-    //     MOV, getRegisterByteDirect(ESP, EBP),// mov esp ebp
-    //     POP_EBP, // pop ebp
-    //     RET // ret
-    // };
-
-    // Code
-
-    const uint8_t Hello_World_Program[] = 
-    {
-
-
-        // RET // ret
-        getMovImmediateByte(EAX), 0x04, 0x00, 0x00, 0x00, // mov eax 12
-        getMovImmediateByte(EBX), 0x01, 0x00, 0x00, 0x00, // mov ebx 1
-        getMovImmediateByte(ECX), 0x76, 0x80, 0x04, 0x08, // mov ecx 0x8048054 + 34
-        getMovImmediateByte(EDX), 0x0E, 0x00, 0x00, 0x00, // mov edx 0
-        0xCD, 0x80,  // int 0x80
-    };
 
     const uint8_t program_segment_end[] = 
     {
@@ -323,13 +1018,18 @@ addByte(print_num_function, 0x0A);
         0xCD, 0x80, // int 80
     };
 
-    const uint8_t hello_world_string[] =
-    {
-        'H', 'e', 'l', 'l', 'o', ',', ' ', 'W', 'o', 'r', 'l', 'd', '!', '\n'
-    };
+    // mov number into eax register
 
-    // Create Code Here
+    program_chunk* print_num_function = create_program_chunk();
+    build_print_num_function(print_num_function);
 
+
+
+
+    program_chunk* main_program = create_program_chunk();
+
+    mov_reg32_imm32(main_program, EAX, 400);
+    call(main_program, sizeof(program_segment_end));
 
 
     uint8_t elf_header[] = 
@@ -368,8 +1068,8 @@ addByte(print_num_function, 0x0A);
         0x54, 0x00, 0x00, 0x00,
         0x54, 0x80, 0x04, 0x08,
         0x00, 0x00, 0x00, 0x00,
-        /*sizeof(Hello_World_Program) + sizeof(program_segment_end) + sizeof(hello_world_string) +*/ test->count, 0x00, 0x00, 0x00, // code size
-        /*sizeof(Hello_World_Program) + sizeof(program_segment_end) + sizeof(hello_world_string) +*/ test->count, 0x00, 0x00, 0x00, // code size
+        main_program->capacity + sizeof(program_segment_end) + print_num_function->count, 0x00, 0x00, 0x00, // code size
+        main_program->capacity + sizeof(program_segment_end) + print_num_function->count, 0x00, 0x00, 0x00, // code size
         0x05, 0x00, 0x00, 0x00,
         0x00, 0x10, 0x00, 0x00
     };
@@ -383,11 +1083,9 @@ addByte(print_num_function, 0x0A);
     fwrite(&elf_header, sizeof(elf_header), 1, file);
     fwrite(&program_header, sizeof(program_header), 1, file);
 
-    fwrite(test->bytes, test->count, 1, file);
-    // fwrite(&program_segment_end, sizeof(program_segment_end), 1, file);
-    // fwrite(Hello_World_Program, sizeof(Hello_World_Program), 1, file);
-    // fwrite(program_segment_end, sizeof(uint8_t) * 12, 1, file);
-    // fwrite(hello_world_string, sizeof(hello_world_string), 1, file);
+    fwrite(main_program->bytes, main_program->count, 1, file);
+    fwrite(program_segment_end, sizeof(program_segment_end), 1, file);
+    fwrite(print_num_function->bytes, print_num_function->count, 1, file);
 
     fclose(file);
     printf("Successfully created executable!\n");
