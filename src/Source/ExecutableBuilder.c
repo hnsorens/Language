@@ -44,6 +44,8 @@
 // Examples
 // MOV_DWORD_IMT, getMovOffsetByte(EBP), 0xFC, 0x64, 0x00, 0x00, 0x00, // mov dword ptr [ebp-4], 100
 
+#define TESTS
+
 // Registers
 #define EAX 0x00
 #define ECX 0x01
@@ -136,26 +138,22 @@ void addByte(program_chunk* chunk, uint8_t byte)
 
 void addint32Bytes(program_chunk* chunk, int32_t num)
 {
-
-uint8_t output[4];
-*(uint32_t*)&output = num;
-
-
     addByte(chunk, (uint8_t)num);
     addByte(chunk, (uint8_t)(num >> 8));
-    printf("BYTE 1: %i\n", output[0]);
-    printf("BYTE 2: %i\n", num >> 8);
-    printf("BYTE 3: %i\n", output[2]);
-    printf("BYTE 4: %i\n", output[3]);
     addByte(chunk, (uint8_t)(num >> 16));
     addByte(chunk, (uint8_t)(num >> 24));
 }
 
+void addint16Bytes(program_chunk* chunk, int32_t num)
+{
+    addByte(chunk, (uint8_t)num);
+    addByte(chunk, (uint8_t)(num >> 8));
+}
+
 void push_register(program_chunk* chunk, uint8_t reg){addByte(chunk, 0x50 + reg);}
-void mov_register(program_chunk* chunk, uint8_t dest, uint8_t move){addByte(chunk, MOV);addByte(chunk, 192 + (move << 3) + dest);}
 void mov_number_into_register(program_chunk* chunk, uint8_t dest, uint32_t num){addByte(chunk, 0xB8 + dest);            addint32Bytes(chunk, num);/*             addByte(chunk, num);addByte(chunk, 0);addByte(chunk, 0);addByte(chunk, 0);*/}
 void pop_register(program_chunk* chunk, uint8_t reg){addByte(chunk, 0x58 + reg);}
-void add_4bytes_number_to_register(program_chunk* chunk, uint8_t dest, uint32_t num){addByte(chunk, IMT);addByte(chunk, 192 + (ADD_IMT << 3) + dest);       addint32Bytes(chunk, num);      }
+
 void add_byte_number_to_register(program_chunk *chunk, uint8_t dest, uint8_t num){addByte(chunk, 0x80); addByte(chunk, 192 + dest); addByte(chunk, num);}
 void sub_number_from_esp(program_chunk* chunk, uint8_t dest, uint8_t num){addByte(chunk, IMT);addByte(chunk, 192 + (SUB_IMT << 3) + dest);addByte(chunk, num);}
 void end_function(program_chunk* chunk){addByte(chunk, RET);}
@@ -164,6 +162,21 @@ void clear_register(program_chunk* chunk, uint8_t reg){addByte(chunk, 0x31); add
 void mov_value_byte_with_offset(program_chunk* chunk, int8_t offset, uint8_t dest, uint8_t byte){addByte(chunk, MOV_DWORD_IMT); addByte(chunk, getMovOffsetByte(EBP)); addByte(chunk, offset); addByte(chunk, byte);}
 void mov_reg_byte_with_offset(program_chunk* chunk, int8_t offset, uint8_t dest, uint8_t move){addByte(chunk, 0x89); addByte(chunk, 64 + (move << 3) + dest); addByte(chunk, offset);} // doesnt work
 void test_2_reg(program_chunk* chunk, uint8_t reg1, uint8_t reg2){addByte(chunk, 0x85); addByte(chunk, 192 + (reg1 << 3) + reg2);}
+
+// void add_to_8_register(program_chunk* chunk, uint8_t dest, int8_t num){addByte(chunk, 0x80)}
+
+
+//Good and tested functions
+void mov_32_register(program_chunk* chunk, uint8_t dest, uint8_t move){addByte(chunk, 0x89);addByte(chunk, 192 + (move << 3) + dest);}
+void mov_16_register(program_chunk* chunk, uint8_t dest, uint8_t move){addByte(chunk, 0x66);addByte(chunk, 0x89);addByte(chunk, 192 + (move << 3) + dest);}
+void mov_8L_register(program_chunk* chunk, uint8_t dest, uint8_t move){addByte(chunk, 0x88);addByte(chunk, 192 + (move << 3) + dest);} // works for A-D
+void mov_8H_register(program_chunk* chunk, uint8_t dest, uint8_t move){addByte(chunk, 0x88);addByte(chunk, 192 + (move*2 << 3) + dest*2);} // works for A-D
+
+void add_8signed_to_register(program_chunk* chunk, uint8_t dest, int8_t num){addByte(chunk, 0x83);addByte(chunk, 192 + dest);addByte(chunk, (uint8_t)num);}
+void add_to_8_register(program_chunk* chunk, uint8_t dest, int8_t num){addByte(chunk, 0x80);addByte(chunk, 192 + dest);addByte(chunk, (uint8_t)num);}
+void add_to_16_register(program_chunk* chunk, uint8_t dest, uint16_t num){addByte(chunk, 0x66);switch (dest){case EAX:addByte(chunk, 0x05);break;case ECX:addByte(chunk, 0x0D);break;case EDX:addByte(chunk, 0x15);break;default:addByte(chunk, 0x81);addByte(chunk, 192 + (ADD_IMT << 3) + dest);}addint16Bytes(chunk, num);}
+void add_to_register(program_chunk* chunk, uint8_t dest, uint32_t num){switch (dest){case EAX:addByte(chunk, 0x05);break;case ECX:addByte(chunk, 0x0D);break;case EDX:addByte(chunk, 0x15);break;default:addByte(chunk, 0x81);addByte(chunk, 192 + (ADD_IMT << 3) + dest);}addint32Bytes(chunk, num);}
+
 
 void BuildExecutable(ASTNode *node)
 {
@@ -178,7 +191,7 @@ void BuildExecutable(ASTNode *node)
     mov_number_into_register(print_num_function, EAX, 123);
 
     push_register(print_num_function, EBP);
-    mov_register(print_num_function, EBP, ESP);
+    mov_32_register(print_num_function, EBP, ESP);
     
     
     clear_register(print_num_function, ESI);
@@ -236,22 +249,46 @@ addByte(print_num_function, 0x0A);
     addByte(print_num_function, 0xFF);
 
     // Print
-    mov_register(print_num_function, EDX, ESI);
+    mov_32_register(print_num_function, EDX, ESI);
     mov_number_into_register(print_num_function, EAX, 4);
     mov_number_into_register(print_num_function, EBX, 1);
     // move the address of the number to ecx
-    mov_register(print_num_function, ECX, ESP);
+    mov_32_register(print_num_function, ECX, ESP);
     call_kernal(print_num_function);
 
-    mov_register(print_num_function, ESP, EBP);
+    mov_32_register(print_num_function, ESP, EBP);
     pop_register(print_num_function, EBP);
     // end_function(print_num_function);
+
+
+
+
+#ifdef TESTS
+    // TEST
+    program_chunk* test = create_program_chunk();
     
+    // all 32 bit register mov
+    for (int dest = 0; dest < 8; dest++)
+    {
+        add_8signed_to_register(test, dest, 123);
+    }
+    for (int dest = 0; dest < 8; dest++)
+    {
+        add_to_8_register(test, dest, 123);
+    }
+    for (int dest = 0; dest < 8; dest++)
+    {
+        add_to_16_register(test, dest, 123);
+    }
+    for (int dest = 0; dest < 8; dest++)
+    {
+        add_to_register(test, dest, -123);
+    }
 
 
 
 
-
+#endif 
     // const uint8_t print_num_function[] = 
     // {
     //     PUSH_EBP,       // push ebp
@@ -331,8 +368,8 @@ addByte(print_num_function, 0x0A);
         0x54, 0x00, 0x00, 0x00,
         0x54, 0x80, 0x04, 0x08,
         0x00, 0x00, 0x00, 0x00,
-        /*sizeof(Hello_World_Program) + sizeof(program_segment_end) + sizeof(hello_world_string) +*/ print_num_function->count + sizeof(program_segment_end), 0x00, 0x00, 0x00, // code size
-        /*sizeof(Hello_World_Program) + sizeof(program_segment_end) + sizeof(hello_world_string) +*/ print_num_function->count + sizeof(program_segment_end), 0x00, 0x00, 0x00, // code size
+        /*sizeof(Hello_World_Program) + sizeof(program_segment_end) + sizeof(hello_world_string) +*/ test->count, 0x00, 0x00, 0x00, // code size
+        /*sizeof(Hello_World_Program) + sizeof(program_segment_end) + sizeof(hello_world_string) +*/ test->count, 0x00, 0x00, 0x00, // code size
         0x05, 0x00, 0x00, 0x00,
         0x00, 0x10, 0x00, 0x00
     };
@@ -346,8 +383,8 @@ addByte(print_num_function, 0x0A);
     fwrite(&elf_header, sizeof(elf_header), 1, file);
     fwrite(&program_header, sizeof(program_header), 1, file);
 
-    fwrite(print_num_function->bytes, print_num_function->count, 1, file);
-    fwrite(&program_segment_end, sizeof(program_segment_end), 1, file);
+    fwrite(test->bytes, test->count, 1, file);
+    // fwrite(&program_segment_end, sizeof(program_segment_end), 1, file);
     // fwrite(Hello_World_Program, sizeof(Hello_World_Program), 1, file);
     // fwrite(program_segment_end, sizeof(uint8_t) * 12, 1, file);
     // fwrite(hello_world_string, sizeof(hello_world_string), 1, file);
