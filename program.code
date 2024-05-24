@@ -1,27 +1,22 @@
 
 
-int a = 1;
-int b = 2;
 
-void print_num()
+void add()
 {
-    
+
 }
 
-int add(int i, int k)
+void subtract()
 {
-    return i + k;
+    add();
 }
 
 int main()
 {
-
-    print_num(a, b, add(a,b));
-
-    int idk = 1;
-
-    idk -= 5;
-
-    return 1;
+    add();
+    subtract();
+    print_num(2);
+    print_num(4);
+    print_num(5);
+    print_num(6);
 }
-

@@ -62,6 +62,11 @@ program_chunk* create_program_chunk()
     chunk->count = 0;
     chunk->capacity = 256;
     chunk->bytes = (uint8_t *)malloc(sizeof(uint8_t) * chunk->capacity);
+
+    chunk->call_request_capacity = 16;
+    chunk->call_request_count = 0;
+    chunk->call_requests = (char**)malloc(sizeof(char*)*chunk->call_request_capacity);
+    chunk->call_request_locations = (uint32_t*)malloc(sizeof(uint32_t)*chunk->call_request_count);
     return chunk;
 }
 
@@ -1004,32 +1009,242 @@ void build_print_num_function(program_chunk* chunk)
 
 
 
+typedef struct
+{
+    program_chunk** functions;
+    uint32_t functionCount;
+    uint32_t functionCapacity;
 
+    program_chunk** memories;
+    uint32_t memoryCount;
+    uint32_t memoryCapacity;
+} function_pool;
+
+function_pool* create_function_pool()
+{
+    function_pool* pool = (function_pool *)malloc(sizeof(function_pool));
+    pool->memoryCapacity = 255;
+    pool->functionCapacity = 255;
+    pool->memoryCount = 0;
+    pool->functionCount = 0;
+
+    pool->functions = (program_chunk **)malloc(sizeof(program_chunk*) * pool->functionCapacity);
+    pool->memories = (program_chunk **)malloc(sizeof(program_chunk*) * pool->memoryCapacity);
+
+    return pool;
+}
+
+void add_memory(function_pool* pool, program_chunk* chunk)
+{
+    if (pool->memoryCount == pool->memoryCapacity)
+    {
+        pool->memoryCapacity += 255;
+        pool->memories = (program_chunk **)realloc(pool->memories, sizeof(program_chunk*) * pool->memoryCapacity);
+    }
+
+    pool->memories[pool->memoryCount++] = chunk;
+}
+
+void add_function(function_pool* pool, program_chunk* chunk)
+{
+    if (pool->functionCount == pool->functionCapacity)
+    {
+        pool->functionCapacity += 255;
+        pool->functions = (program_chunk **)realloc(pool->functions, sizeof(program_chunk*) * pool->functionCapacity);
+    }
+
+    pool->functions[pool->functionCount++] = chunk;
+}
+
+
+
+
+
+add_call_request(program_chunk* chunk, char* function_name)
+{
+    if (chunk->call_request_count == chunk->call_request_capacity)
+    {
+        chunk->call_request_capacity+=16;
+        chunk->call_request_locations = (uint32_t*)realloc(chunk->call_request_locations, sizeof(uint32_t) * chunk->call_request_capacity);
+        chunk->call_requests = (char**)realloc(chunk->call_requests, sizeof(char*)*chunk->call_request_capacity);
+    }
+
+    chunk->call_request_locations[chunk->call_request_count] = chunk->count;
+    printf("ASKDJHGAJKHLSDGJKHASGDKJHAGSDKJHAGKSJD: %i\n", chunk->call_request_locations[chunk->call_request_count]);
+    chunk->call_requests[chunk->call_request_count++] = function_name;
+}
+
+void build_chunk(ASTNode *node, function_pool* pool, program_chunk* chunk)
+{
+    switch (node->type)
+    {
+    case AST_COMPOUND_GLOBAL_CONSTRUCT:
+        for (int i = 0; i < node->data.compound_global_construct.global_construct_count; i++)
+        {
+            build_chunk(node->data.compound_global_construct.global_constructs[i], pool, NULL);
+        }
+        break;
+    case AST_FUNCTION_DECLARATION:
+        program_chunk* function = create_program_chunk();
+        function->name = node->data.function_global_construct.name;
+        add_function(pool, function);
+        if (strcmp(function->name, "main") != 0)
+        {
+            push_reg32(function, EBP);
+            mov_reg32_reg32(function, EBP, ESP);
+            sub_reg32_imm32(function, ESP, 0);
+
+            build_chunk(node->data.function_global_construct.statements, pool, function);
+
+            mov_reg32_reg32(function, ESP, EBP);
+            pop_reg32(function, EBP);
+            ret(function);
+        }
+        else
+        {
+            mov_reg32_reg32(function, EBP, ESP);
+            sub_reg32_imm32(function, ESP, 0);
+
+            build_chunk(node->data.function_global_construct.statements, pool, function);
+            
+            mov_reg32_reg32(function, ESP, EBP);
+            pop_reg32(function, EBP);
+
+            mov_reg32_imm32(function, EAX, 1);
+            mov_reg32_imm32(function, EBX, 0);
+            int_kernal(function);
+        }
+        
+        break;
+    case AST_VARIABLE_DECLARATION:
+        /* code */
+        break;
+    case AST_COMPOUND_STATEMENT:
+        for (int i = 0; i < node->data.compound_statement.statement_count; i++)
+        {
+            build_chunk(node->data.compound_statement.statements[i], pool, chunk);
+        }
+        break;
+    case AST_EXPRESSION_STATEMENT:
+        build_chunk(node->data.expression_statement.expression, pool, chunk);
+        break;
+    case AST_FUNCTION_CALL:
+        if (strcmp(node->data.function_call.name, "print_num")==0 && node->data.function_call.argumentList->data.compound_argument.arguments[0])
+        {
+            mov_reg32_imm32(chunk, EAX, node->data.function_call.argumentList->data.compound_argument.arguments[0]->data.argument.argument->data.number_value);
+            // call(chunk, 0);
+
+        }
+        add_call_request(chunk, node->data.function_call.name);
+        call(chunk, 0);
+    
+    default:
+        break;
+    }
+}
+
+
+void reorder_functions(function_pool* functions)
+{
+    for (int i = 0; i < functions->functionCount; i++)
+    {
+        if (strcmp(functions->functions[i]->name, "main") == 0)
+        {
+            program_chunk* last_chunk = functions->functions[i];
+            for (int i2 = 0; i2 < i+1; i2++)
+            {
+                program_chunk* set_chunk = last_chunk;
+                last_chunk = functions->functions[i2];
+                functions->functions[i2] = set_chunk;
+            }
+        }
+    }
+}
+
+calculate_function_call_addresses(function_pool* pool)
+{
+    uint32_t current_address = 0;
+    for (int i = 0; i < pool->functionCount; i++)
+    {
+        pool->functions[i]->start_address = current_address;
+        current_address += pool->functions[i]->count;
+    }
+}
+
+
+solve_calls(function_pool *pool)
+{
+    for (int function_index = 0; function_index < pool->functionCount; function_index++)
+    {
+        for (int call_request_index = 0; call_request_index < pool->functions[function_index]->call_request_count; call_request_index++)
+        {
+            printf("Call Request: %s\n", pool->functions[function_index]->call_requests[call_request_index]);
+            for (int i = 0; i < pool->functionCount; i++)
+            {
+                printf("Call Request: %s %s\n", pool->functions[function_index]->call_requests[call_request_index], pool->functions[i]->name);
+                if (strcmp(pool->functions[function_index]->call_requests[call_request_index], pool->functions[i]->name) == 0)
+                {
+                    
+                    uint32_t address_offset = (pool->functions[i]->start_address - (pool->functions[function_index]->call_request_locations[call_request_index] + pool->functions[function_index]->start_address)) - 5;
+                    printf("hjkasdk %i %i %i\n", address_offset, pool->functions[i]->start_address, pool->functions[function_index]->call_request_locations[call_request_index]);
+                    pool->functions[function_index]->bytes[pool->functions[function_index]->call_request_locations[call_request_index] + 1] = (uint8_t)(address_offset & 0xFF);
+                    pool->functions[function_index]->bytes[pool->functions[function_index]->call_request_locations[call_request_index] + 2] = (uint8_t)((address_offset >> 8) & 0xFF);
+                    pool->functions[function_index]->bytes[pool->functions[function_index]->call_request_locations[call_request_index] + 3] = (uint8_t)((address_offset >> 16) & 0xFF);
+                    pool->functions[function_index]->bytes[pool->functions[function_index]->call_request_locations[call_request_index] + 4] = (uint8_t)((address_offset >> 24) & 0xFF);
+                }
+            }
+        }
+    }
+}
 
 
 
 void BuildExecutable(ASTNode *node)
 {
 
-    const uint8_t program_segment_end[] = 
-    {
-        0xB8, 0x01, 0x00, 0x00, 0x00, // mov eax 1
-        0xBB, 0x00, 0x00, 0x00, 0x00, // mov ebx 0
-        0xCD, 0x80, // int 80
-    };
 
     // mov number into eax register
 
     program_chunk* print_num_function = create_program_chunk();
     build_print_num_function(print_num_function);
+    print_num_function->start_address = 0;
+    print_num_function->name = "print_num";
+
+
+
+    function_pool* pool = create_function_pool();
+    add_function(pool, print_num_function);
+    build_chunk(node, pool, NULL);
+
+    for (int i = 0; i < pool->functionCount; i++)
+    {
+        printf("FUNCTION: %s\n", pool->functions[i]->name);
+    }
+
+
+    reorder_functions(pool);
+
+    for (int i = 0; i < pool->functionCount; i++)
+    {
+        printf("FUNCTION: %s\n", pool->functions[i]->name);
+    }
+
+    calculate_function_call_addresses(pool);
+    solve_calls(pool);
+
+
+
+    // Gets size of program by adding the size of each function
+    int program_size = 0;
+    for (int i = 0; i < pool->functionCount; i++)
+    {
+        program_size += pool->functions[i]->count;
+    }
 
 
 
 
-    program_chunk* main_program = create_program_chunk();
 
-    mov_reg32_imm32(main_program, EAX, 400);
-    call(main_program, sizeof(program_segment_end));
 
 
     uint8_t elf_header[] = 
@@ -1068,8 +1283,8 @@ void BuildExecutable(ASTNode *node)
         0x54, 0x00, 0x00, 0x00,
         0x54, 0x80, 0x04, 0x08,
         0x00, 0x00, 0x00, 0x00,
-        main_program->capacity + sizeof(program_segment_end) + print_num_function->count, 0x00, 0x00, 0x00, // code size
-        main_program->capacity + sizeof(program_segment_end) + print_num_function->count, 0x00, 0x00, 0x00, // code size
+        program_size, 0x00, 0x00, 0x00, // code size
+        program_size, 0x00, 0x00, 0x00, // code size
         0x05, 0x00, 0x00, 0x00,
         0x00, 0x10, 0x00, 0x00
     };
@@ -1083,9 +1298,10 @@ void BuildExecutable(ASTNode *node)
     fwrite(&elf_header, sizeof(elf_header), 1, file);
     fwrite(&program_header, sizeof(program_header), 1, file);
 
-    fwrite(main_program->bytes, main_program->count, 1, file);
-    fwrite(program_segment_end, sizeof(program_segment_end), 1, file);
-    fwrite(print_num_function->bytes, print_num_function->count, 1, file);
+    for (int i = 0; i < pool->functionCount; i++)
+    {
+        fwrite(pool->functions[i]->bytes, pool->functions[i]->count, 1, file);
+    }
 
     fclose(file);
     printf("Successfully created executable!\n");

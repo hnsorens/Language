@@ -157,10 +157,10 @@ void semantic_analysis(ASTNode *node, SemanticState *state)
         }
         break;
     case AST_FUNCTION_CALL:
-        if (!lookup_symbol(state->symtab, node->data.function_call.name, state->current_scope))
-        {
-            fprintf(stderr, "Error: Function '%s' not declared.\n", node->data.function_call.name);
-        }
+        // if (!lookup_symbol(state->symtab, node->data.function_call.name, state->current_scope))
+        // {
+        //     fprintf(stderr, "Error: Function '%s' not declared.\n", node->data.function_call.name);
+        // }
         semantic_analysis(node->data.function_call.argumentList, state);
         break;
     case AST_COMPOUND_ARGUMENT:

@@ -41,6 +41,14 @@ typedef struct
     uint8_t* bytes;
     uint32_t count;
     uint32_t capacity;
+    char* name;
+    uint32_t start_address;
+
+
+    const char** call_requests;
+    uint32_t* call_request_locations;
+    uint32_t call_request_capacity;
+    uint32_t call_request_count;
 } program_chunk;
 
 void BuildExecutable(ASTNode *node);
