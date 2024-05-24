@@ -3,12 +3,13 @@
 
 void add()
 {
-
+    print_num(123);
 }
 
 void subtract()
 {
     add();
+    print_num(2);
 }
 
 int main()
@@ -16,7 +17,4 @@ int main()
     add();
     subtract();
     print_num(2);
-    print_num(4);
-    print_num(5);
-    print_num(6);
 }

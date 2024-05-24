@@ -1070,7 +1070,6 @@ add_call_request(program_chunk* chunk, char* function_name)
     }
 
     chunk->call_request_locations[chunk->call_request_count] = chunk->count;
-    printf("ASKDJHGAJKHLSDGJKHASGDKJHAGSDKJHAGKSJD: %i\n", chunk->call_request_locations[chunk->call_request_count]);
     chunk->call_requests[chunk->call_request_count++] = function_name;
 }
 
@@ -1178,15 +1177,12 @@ solve_calls(function_pool *pool)
     {
         for (int call_request_index = 0; call_request_index < pool->functions[function_index]->call_request_count; call_request_index++)
         {
-            printf("Call Request: %s\n", pool->functions[function_index]->call_requests[call_request_index]);
             for (int i = 0; i < pool->functionCount; i++)
             {
-                printf("Call Request: %s %s\n", pool->functions[function_index]->call_requests[call_request_index], pool->functions[i]->name);
                 if (strcmp(pool->functions[function_index]->call_requests[call_request_index], pool->functions[i]->name) == 0)
                 {
                     
                     uint32_t address_offset = (pool->functions[i]->start_address - (pool->functions[function_index]->call_request_locations[call_request_index] + pool->functions[function_index]->start_address)) - 5;
-                    printf("hjkasdk %i %i %i\n", address_offset, pool->functions[i]->start_address, pool->functions[function_index]->call_request_locations[call_request_index]);
                     pool->functions[function_index]->bytes[pool->functions[function_index]->call_request_locations[call_request_index] + 1] = (uint8_t)(address_offset & 0xFF);
                     pool->functions[function_index]->bytes[pool->functions[function_index]->call_request_locations[call_request_index] + 2] = (uint8_t)((address_offset >> 8) & 0xFF);
                     pool->functions[function_index]->bytes[pool->functions[function_index]->call_request_locations[call_request_index] + 3] = (uint8_t)((address_offset >> 16) & 0xFF);
@@ -1216,18 +1212,8 @@ void BuildExecutable(ASTNode *node)
     add_function(pool, print_num_function);
     build_chunk(node, pool, NULL);
 
-    for (int i = 0; i < pool->functionCount; i++)
-    {
-        printf("FUNCTION: %s\n", pool->functions[i]->name);
-    }
-
 
     reorder_functions(pool);
-
-    for (int i = 0; i < pool->functionCount; i++)
-    {
-        printf("FUNCTION: %s\n", pool->functions[i]->name);
-    }
 
     calculate_function_call_addresses(pool);
     solve_calls(pool);
